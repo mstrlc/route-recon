@@ -4,13 +4,13 @@
   "description": "",
   "main": "constants.js",
   "scripts": {
-    "build": "rm -rf dist && mkdir -p dist/assets dist/icons && cp manifest.json browser-polyfill.js *.js dist/ && cp -r assets/* dist/assets/ && cp -r icons/* dist/icons/",
+    "build": "rm -rf dist && mkdir -p dist/assets dist/icons && cp manifest.json browser-polyfill.js *.js LICENSE dist/ && cp -r assets/* dist/assets/ && cp -r icons/* dist/icons/",
     "zip": "npm run build && cd dist && zip -r ../strava-more-maps.zip ./*",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Matyáš Strelec",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "webextension-polyfill": "^0.12.0"
