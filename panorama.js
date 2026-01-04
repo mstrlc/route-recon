@@ -21,6 +21,7 @@
         docked: { bottom: true, right: true },
         handleClickBound: null,
         domClickBound: null,
+        lastYaw: 0, // Stored in radians
         provider: localStorage.getItem(STORAGE_KEYS.PANO_PROVIDER) || 'mapy'
     };
 
@@ -45,13 +46,20 @@
                 .handle-t { top: 0; left: 0; right: 0; height: 10px; cursor: ns-resize; }
                 .handle-l { top: 0; left: 0; bottom: 0; width: 10px; cursor: ew-resize; }
                 .handle-tl { top: 0; left: 0; width: 20px; height: 20px; cursor: nwse-resize; z-index: 10006; }
-                #strava-panorama-close {
-                    position: absolute; top: 12px; right: 12px;
+                #strava-panorama-close, #strava-panorama-switch {
+                    position: absolute; top: 12px;
                     background: rgba(255, 255, 255, 0.9); border: none; color: #333;
-                    width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
-                    font-size: 24px; display: flex; align-items: center; justify-content: center;
+                    height: 28px; cursor: pointer;
+                    display: flex; align-items: center; justify-content: center;
                     z-index: 10010; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                    transition: all 0.2s;
                 }
+                #strava-panorama-close { right: 12px; width: 28px; border-radius: 50%; font-size: 24px; }
+                #strava-panorama-switch { 
+                    right: 48px; width: auto; min-width: 28px; padding: 0 10px; 
+                    border-radius: 14px; font-size: 11px; font-weight: 800; font-family: sans-serif; 
+                }
+                #strava-panorama-close:hover, #strava-panorama-switch:hover { background: white; transform: scale(1.05); }
                 #strava-panorama-drag-handle {
                     position: absolute; top: 0; left: 0; right: 0; height: 40px; z-index: 10002; cursor: move;
                 }
@@ -96,6 +104,19 @@
             closeBtn.textContent = '×';
             closeBtn.onclick = onClose;
 
+            const switchBtn = document.createElement('button');
+            switchBtn.id = 'strava-panorama-switch';
+            switchBtn.title = 'Switch Provider (Mapy.cz / Google)';
+            switchBtn.textContent = state.provider === 'mapy' ? 'Mapy.cz' : 'Google';
+            switchBtn.onclick = () => {
+                const other = state.provider === 'mapy' ? 'google' : 'mapy';
+                state.provider = other;
+                switchBtn.textContent = other === 'mapy' ? 'Mapy.cz' : 'Google';
+                localStorage.setItem(STORAGE_KEYS.PANO_PROVIDER, other);
+                window.postMessage({ type: 'STRAVA_API_KEY_UPDATED' }, '*');
+                if (state.lastPos) PanoramaManager.open(state.lastPos.lon, state.lastPos.lat);
+            };
+
             const content = document.createElement('div');
             content.id = 'strava-panorama-content';
 
@@ -113,6 +134,7 @@
             content.appendChild(loading);
 
             win.appendChild(handle);
+            win.appendChild(switchBtn);
             win.appendChild(closeBtn);
             win.appendChild(content);
 
@@ -460,13 +482,13 @@
                     content.appendChild(viewer);
                 } else {
                     viewer.style.display = 'block';
-                    viewer.innerHTML = '';
+                    while (viewer.firstChild) viewer.removeChild(viewer.firstChild);
                 }
 
                 if (provider === 'google') {
-                    await this.openGoogle(viewer, lon, lat);
+                    await this.openGoogle(viewer, lon, lat, state.lastYaw || 0);
                 } else {
-                    await this.openMapy(viewer, lon, lat);
+                    await this.openMapy(viewer, lon, lat, state.lastYaw || 0);
                 }
 
                 loading.style.display = 'none';
@@ -476,12 +498,12 @@
             }
         },
 
-        async openMapy(viewer, lon, lat) {
+        async openMapy(viewer, lon, lat, initialYaw = 0) {
             const api = window.Panorama || (window.SMap && window.SMap.Pano);
             if (!api) throw new Error('Mapy.cz Panorama API not found');
 
             const pano = await api.panoramaFromPosition({
-                parent: viewer, lon, lat, radius: 100, lang: 'en', yaw: 'auto',
+                parent: viewer, lon, lat, radius: 100, lang: 'en', yaw: initialYaw,
                 fov: Math.PI / 2, showNavigation: true,
                 apiKey: localStorage.getItem(STORAGE_KEYS.MAPY_KEY)
             });
@@ -493,13 +515,24 @@
             }
 
             const cam = pano.getCamera();
-            PanoramaMarker.create(state.map, pano.info.lon, pano.info.lat, cam.yaw);
+            state.lastYaw = cam.yaw;
+            state.lastPos = { lon: pano.info.lon, lat: pano.info.lat };
+            PanoramaMarker.create(state.map, state.lastPos.lon, state.lastPos.lat, state.lastYaw);
 
-            pano.addListener('pano-view', () => PanoramaMarker.updateDir(pano.getCamera().yaw));
-            pano.addListener('pano-place', (p) => p.info && PanoramaMarker.create(state.map, p.info.lon, p.info.lat, pano.getCamera().yaw));
+            pano.addListener('pano-view', () => {
+                state.lastYaw = pano.getCamera().yaw;
+                PanoramaMarker.updateDir(state.lastYaw);
+            });
+            pano.addListener('pano-place', (p) => {
+                if (p.info) {
+                    state.lastPos = { lon: p.info.lon, lat: p.info.lat };
+                    state.lastYaw = pano.getCamera().yaw;
+                    PanoramaMarker.create(state.map, state.lastPos.lon, state.lastPos.lat, state.lastYaw);
+                }
+            });
         },
 
-        async openGoogle(viewer, lon, lat) {
+        async openGoogle(viewer, lon, lat, initialYaw = 0) {
             if (!window.google || !window.google.maps) throw new Error('Google Maps API not loaded');
 
             const sv = new google.maps.StreetViewService();
@@ -514,26 +547,32 @@
 
             const pano = new google.maps.StreetViewPanorama(viewer, {
                 position: result.location.latLng,
-                pov: { heading: 0, pitch: 0 },
+                pov: { heading: (initialYaw * 180 / Math.PI), pitch: 0 },
                 zoom: 1,
                 addressControl: false,
                 linksControl: true,
                 panControl: true,
-                enableCloseButton: false
+                enableCloseButton: false,
+                fullscreenControl: false
             });
 
             state.panorama = pano;
 
             const pos = result.location.latLng;
-            PanoramaMarker.create(state.map, pos.lng(), pos.lat(), 0);
+            state.lastPos = { lon: pos.lng(), lat: pos.lat() };
+            state.lastYaw = initialYaw;
+            PanoramaMarker.create(state.map, state.lastPos.lon, state.lastPos.lat, state.lastYaw);
 
             pano.addListener('pov_changed', () => {
-                PanoramaMarker.updateDir(pano.getPov().heading * Math.PI / 180);
+                state.lastYaw = pano.getPov().heading * Math.PI / 180;
+                PanoramaMarker.updateDir(state.lastYaw);
             });
 
             pano.addListener('position_changed', () => {
                 const p = pano.getPosition();
-                PanoramaMarker.create(state.map, p.lng(), p.lat(), pano.getPov().heading * Math.PI / 180);
+                state.lastPos = { lon: p.lng(), lat: p.lat() };
+                state.lastYaw = pano.getPov().heading * Math.PI / 180;
+                PanoramaMarker.create(state.map, state.lastPos.lon, state.lastPos.lat, state.lastYaw);
             });
         },
 
@@ -654,6 +693,10 @@
             const newProvider = localStorage.getItem(STORAGE_KEYS.PANO_PROVIDER) || 'mapy';
             if (newProvider !== state.provider) {
                 state.provider = newProvider;
+                // Sync UI button
+                const switchBtn = document.getElementById('strava-panorama-switch');
+                if (switchBtn) switchBtn.textContent = state.provider === 'mapy' ? 'Mapy.cz' : 'Google';
+
                 // If window is open, try to switch
                 if (state.active && state.window && state.lastPos) {
                     PanoramaManager.open(state.lastPos.lon, state.lastPos.lat);
