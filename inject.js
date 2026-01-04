@@ -50,6 +50,22 @@
                 'https://c.tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey=\${API_KEY}'
             ],
             attribution: '&copy; Thunderforest, OpenStreetMap'
+        },
+        'google-regular': {
+            url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+            attribution: '&copy; Google'
+        },
+        'google-satellite': {
+            url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+            attribution: '&copy; Google'
+        },
+        'google-terrain': {
+            url: 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
+            attribution: '&copy; Google'
+        },
+        'google-hybrid': {
+            url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+            attribution: '&copy; Google'
         }
     };
 

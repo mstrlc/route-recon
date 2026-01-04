@@ -24,6 +24,13 @@ var StravaMoreMapsConfig = {
         { id: 'osm-cycle', label: 'Cycle Map', img: 'assets/osm/cycle.png' }
     ],
 
+    GOOGLE_OPTIONS: [
+        { id: 'google-regular', label: 'Standard', img: 'assets/google/standard.png' },
+        { id: 'google-satellite', label: 'Satellite', img: 'assets/google/satellite.png' },
+        { id: 'google-terrain', label: 'Terrain', img: 'assets/google/terrain.png' },
+        { id: 'google-hybrid', label: 'Hybrid', img: 'assets/google/hybrid.png' }
+    ],
+
     STORAGE_KEYS: {
         MAPY_KEY: 'strava_more_maps_mapy_api_key',
         GOOGLE_KEY: 'strava_more_maps_google_api_key',

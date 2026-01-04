@@ -45,6 +45,7 @@ const {
     SELECTORS,
     MAP_OPTIONS,
     OSM_OPTIONS,
+    GOOGLE_OPTIONS,
     STORAGE_KEYS,
     STRINGS
 } = StravaMoreMapsConfig;
@@ -276,6 +277,15 @@ const observer = new MutationObserver((mutations) => {
                         container.appendChild(createButton(opt));
                     });
 
+                    // Add Section Header "Google Maps"
+                    const googleHeader = header.cloneNode(true);
+                    googleHeader.querySelector('span').textContent = 'Google Maps';
+                    container.appendChild(googleHeader);
+
+                    GOOGLE_OPTIONS.forEach(opt => {
+                        container.appendChild(createButton(opt));
+                    });
+
                     // --- Visual Adjustments Section ---
                     // --- Styling Controls ---
                     const controlsHeader = header.cloneNode(true);
@@ -415,8 +425,8 @@ const observer = new MutationObserver((mutations) => {
  * Create and inject panorama button in the map control area (top-left)
  */
 function createPanoramaButton() {
-    // Check if button already exists
-    if (panoramaButtonInjected || document.getElementById('strava-panorama-control')) {
+    // Check if button already exists in the DOM
+    if (document.getElementById('strava-panorama-control')) {
         return;
     }
 
@@ -430,6 +440,17 @@ function createPanoramaButton() {
     const controlGroup = document.createElement('div');
     controlGroup.id = 'strava-panorama-control';
     controlGroup.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
+    controlGroup.style.cssText = `
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        width: auto !important;
+        max-width: none !important;
+        overflow: visible !important;
+        background: white !important;
+        border-radius: 4px !important;
+        box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
+    `;
 
     // Create the button
     const btn = document.createElement('button');
@@ -460,28 +481,30 @@ function createPanoramaButton() {
     const selector = document.createElement('select');
     selector.id = 'strava-panorama-provider-selector';
     selector.style.cssText = `
-        border: none;
-        background: white;
-        font-size: 11px;
-        font-weight: 600;
-        padding: 0 4px;
-        height: 29px; /* Match Mapbox button height */
-        border-left: 1px solid #ddd;
-        border-radius: 0 4px 4px 0;
-        cursor: pointer;
-        outline: none;
-        color: #333;
+        border: none !important;
+        background: transparent !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        padding: 0 4px 0 2px !important;
+        height: 29px !important;
+        border-left: 1px solid #eee !important;
+        cursor: pointer !important;
+        outline: none !important;
+        color: #333 !important;
+        appearance: auto !important;
+        -webkit-appearance: menulist !important;
+        margin: 0 !important;
+        min-width: 38px !important;
+        text-align: center !important;
     `;
 
     const optMapy = document.createElement('option');
     optMapy.value = 'mapy';
-    optMapy.textContent = 'M';
-    optMapy.title = 'Mapy.cz';
+    optMapy.textContent = 'Mapy.cz';
 
     const optGoogle = document.createElement('option');
     optGoogle.value = 'google';
-    optGoogle.textContent = 'G';
-    optGoogle.title = 'Google Street View';
+    optGoogle.textContent = 'Google';
 
     selector.appendChild(optMapy);
     selector.appendChild(optGoogle);
@@ -495,7 +518,6 @@ function createPanoramaButton() {
         window.postMessage({ type: 'STRAVA_API_KEY_UPDATED' }, '*');
     });
 
-    controlGroup.style.display = 'flex';
     controlGroup.appendChild(selector);
 
     // Toggle functionality
@@ -512,7 +534,6 @@ function createPanoramaButton() {
     // Prepend to top-left to be above geolocate
     ctrlContainer.prepend(controlGroup);
 
-    panoramaButtonInjected = true;
     console.log('Strava More Maps: Panorama control added!');
 }
 
@@ -570,7 +591,7 @@ function injectSettingsModal() {
     title.style.color = '#333';
 
     const closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '&times;';
+    closeBtn.textContent = '×';
     closeBtn.style.cssText = `
         position: absolute;
         top: 16px;
@@ -635,15 +656,42 @@ function injectSettingsModal() {
 
     const instructions = document.createElement('div');
     instructions.style.cssText = 'font-size:13px; color:#444; margin-bottom:24px; line-height:1.5; background:#fdf6f4; padding:16px; border-radius:8px; border-left:4px solid #fc4c02;';
-    instructions.innerHTML = `
-        <div style="font-weight:700;margin-bottom:8px;color:#fc4c02;">${STRINGS.SETTINGS.INSTRUCTIONS_TITLE}</div>
-        ${STRINGS.SETTINGS.INSTRUCTIONS_TEXT}
-        <ul style="margin:10px 0 0 18px;padding:0;">
-            <li style="margin-bottom:6px;"><strong>Mapy.cz</strong>: <a href="https://developer.mapy.com/account/projects" target="_blank" style="color:#fc4c02;text-decoration:none;font-weight:600;">developer.mapy.com</a></li>
-            <li style="margin-bottom:6px;"><strong>Google Cloud</strong>: <a href="https://console.cloud.google.com/google/maps-apis/" target="_blank" style="color:#fc4c02;text-decoration:none;font-weight:600;">Google Cloud Console</a></li>
-            <li><strong>Thunderforest</strong>: <a href="https://manage.thunderforest.com/" target="_blank" style="color:#fc4c02;text-decoration:none;font-weight:600;">manage.thunderforest.com</a></li>
-        </ul>
-    `;
+
+    const instrTitle = document.createElement('div');
+    instrTitle.style.cssText = 'font-weight:700;margin-bottom:8px;color:#fc4c02;';
+    instrTitle.textContent = STRINGS.SETTINGS.INSTRUCTIONS_TITLE;
+    instructions.appendChild(instrTitle);
+
+    const instrText = document.createTextNode(STRINGS.SETTINGS.INSTRUCTIONS_TEXT);
+    instructions.appendChild(instrText);
+
+    const instrList = document.createElement('ul');
+    instrList.style.cssText = 'margin:10px 0 0 18px;padding:0;';
+
+    const providers = [
+        { name: 'Mapy.cz', url: 'https://developer.mapy.com/account/projects', label: 'developer.mapy.com' },
+        { name: 'Google Cloud', url: 'https://console.cloud.google.com/google/maps-apis/', label: 'Google Cloud Console' },
+        { name: 'Thunderforest', url: 'https://manage.thunderforest.com/', label: 'manage.thunderforest.com' }
+    ];
+
+    providers.forEach(p => {
+        const li = document.createElement('li');
+        li.style.marginBottom = '6px';
+
+        const strong = document.createElement('strong');
+        strong.textContent = p.name + ': ';
+        li.appendChild(strong);
+
+        const a = document.createElement('a');
+        a.href = p.url;
+        a.target = '_blank';
+        a.style.cssText = 'color:#fc4c02;text-decoration:none;font-weight:600;';
+        a.textContent = p.label;
+        li.appendChild(a);
+
+        instrList.appendChild(li);
+    });
+    instructions.appendChild(instrList);
 
     const storageInfo = document.createElement('div');
     storageInfo.style.cssText = 'font-size:11px; color:#888; margin-bottom:24px; text-align:left; font-style:italic;';
@@ -704,7 +752,9 @@ function createSettingsButton() {
     cogIcon.setAttribute('viewBox', '0 0 16 16');
     cogIcon.setAttribute('width', '16');
     cogIcon.setAttribute('height', '16');
-    cogIcon.innerHTML = '<path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.311c.546 1.006.009 2.223-.872 2.105l-.34-.1c-1.4-.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.17-.311a1.464 1.464 0 0 1 .872-2.105l.34.1c1.4.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>';
+    const cogPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    cogPath.setAttribute('d', 'M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.311c.546 1.006.009 2.223-.872 2.105l-.34-.1c-1.4-.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.17-.311a1.464 1.464 0 0 1 .872-2.105l.34.1c1.4.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z');
+    cogIcon.appendChild(cogPath);
 
     const label = document.createElement('span');
     label.textContent = STRINGS.UI.SETTINGS_LABEL;

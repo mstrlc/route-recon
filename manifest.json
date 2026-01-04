@@ -40,7 +40,7 @@
                 "panorama.js",
                 "assets/mapycom/*",
                 "assets/osm/*",
-                
+                "assets/google/*",
                 "icons/*"
             ],
             "matches": [
