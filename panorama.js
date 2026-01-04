@@ -107,6 +107,10 @@
             Draggable.init(win, win.querySelector('#strava-panorama-drag-handle'));
             state.window = win;
 
+            // Initialize ratios based on initial size (600x450)
+            state.ratios.width = 600 / window.innerWidth;
+            state.ratios.height = 450 / window.innerHeight;
+
             // Initial positioning
             Utils.enforceBounds(win);
 
@@ -428,26 +432,33 @@
         },
 
         setupLayoutObserver() {
-            const startObserver = () => {
-                const bar = document.querySelector('[class*="BottomBar_bottomBar"]');
-                if (bar) {
-                    new ResizeObserver(() => {
-                        if (state.active && state.window) {
-                            Utils.enforceBounds(state.window);
-                        }
-                    }).observe(bar);
-                    return true;
+            // Watch for any DOM changes that might indicate the bottom bar appearing/sized
+            const observer = new MutationObserver(() => {
+                if (state.active && state.window) {
+                    Utils.enforceBounds(state.window);
                 }
-                return false;
-            };
+            });
 
-            if (!startObserver()) {
-                // If bar doesn't exist yet (late injection), poll for it
-                let attempts = 0;
-                const i = setInterval(() => {
-                    if (startObserver() || ++attempts > 10) clearInterval(i);
-                }, 1000);
-            }
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class', 'style']
+            });
+
+            // Handle window resizing
+            window.addEventListener('resize', () => {
+                if (state.active && state.window) {
+                    Utils.enforceBounds(state.window);
+                }
+            });
+
+            // Periodically check as a fallback (Strava's React layout changes can be tricky)
+            setInterval(() => {
+                if (state.active && state.window) {
+                    Utils.enforceBounds(state.window);
+                }
+            }, 2000);
         }
     };
 
