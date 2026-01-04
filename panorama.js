@@ -1,0 +1,459 @@
+/**
+ * Strava More Maps - Panorama Module
+ * 
+ * Handles Mapy.cz panorama integration with a small corner window.
+ * Runs in the page context.
+ */
+
+(() => {
+    const { STRINGS, STORAGE_KEYS } = StravaMoreMapsConfig;
+
+    const state = {
+        apiReady: false,
+        active: false,
+        expanded: false,
+        window: null,
+        panorama: null,
+        marker: null,
+        map: null,
+        ratios: { width: 0.4, height: 0.4 },
+        docked: { bottom: true, right: true },
+        handleClickBound: null,
+        domClickBound: null
+    };
+
+    /**
+     * UI Components and Styles
+     */
+    const PanoramaUI = {
+        injectStyles() {
+            if (document.getElementById('strava-panorama-styles')) return;
+            const style = document.createElement('style');
+            style.id = 'strava-panorama-styles';
+            style.textContent = `
+                #strava-panorama-window {
+                    position: fixed; bottom: 20px; right: 20px;
+                    width: 600px; height: 450px; min-width: 300px; min-height: 200px;
+                    max-width: calc(100vw - 40px); max-height: calc(100vh - 145px);
+                    background: #1a1a1a; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+                    z-index: 10001; display: flex; flex-direction: column; overflow: hidden;
+                }
+                #strava-panorama-window.error-state { background: rgba(0, 0, 0, 0.2) !important; backdrop-filter: blur(4px); }
+                .pano-handle { position: absolute; z-index: 10005; }
+                .handle-t { top: 0; left: 0; right: 0; height: 10px; cursor: ns-resize; }
+                .handle-l { top: 0; left: 0; bottom: 0; width: 10px; cursor: ew-resize; }
+                .handle-tl { top: 0; left: 0; width: 20px; height: 20px; cursor: nwse-resize; z-index: 10006; }
+                #strava-panorama-close {
+                    position: absolute; top: 12px; right: 12px;
+                    background: rgba(255, 255, 255, 0.9); border: none; color: #333;
+                    width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+                    font-size: 24px; display: flex; align-items: center; justify-content: center;
+                    z-index: 10010; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                }
+                #strava-panorama-drag-handle {
+                    position: absolute; top: 0; left: 0; right: 0; height: 40px; z-index: 10002; cursor: move;
+                }
+                #strava-panorama-content { flex: 1; position: relative; overflow: hidden; }
+                #strava-panorama-loading {
+                    position: absolute; inset: 0; background: #1a1a1a; color: white;
+                    display: flex; flex-direction: column; align-items: center; justify-content: center;
+                    text-align: center; z-index: 10001;
+                }
+                #strava-panorama-window.error-state #strava-panorama-loading { background: transparent; }
+                .pano-spinner {
+                    width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.3);
+                    border-top-color: white; border-radius: 50%; animation: pano-spin 1s linear infinite;
+                    margin-bottom: 12px;
+                }
+                @keyframes pano-spin { to { transform: rotate(360deg); } }
+                body.strava-panorama-active .mapboxgl-canvas { cursor: crosshair !important; }
+                body.strava-panorama-active .MapPointerTooltip_mapTooltip__gaOkC,
+                body.strava-panorama-active .mapboxgl-popup { display: none !important; }
+                body.strava-panorama-active [class*="RouteBuilder_sidebar"],
+                body.strava-panorama-active [class*="RouteBuilderSidePanel"] {
+                    pointer-events: none !important;
+                    opacity: 0.6 !important;
+                    filter: grayscale(1) !important;
+                    transition: all 0.3s ease;
+                }
+            `;
+            document.head.appendChild(style);
+        },
+
+        createWindow(onClose) {
+            if (state.window) return state.window;
+            const win = document.createElement('div');
+            win.id = 'strava-panorama-window';
+            win.innerHTML = `
+                <div id="strava-panorama-drag-handle"></div>
+                <button id="strava-panorama-close" title="${STRINGS.PANORAMA.CLOSE_TOOLTIP}">×</button>
+                <div id="strava-panorama-content">
+                    <div id="strava-panorama-loading">
+                        <div class="pano-spinner"></div>
+                        <div>${STRINGS.PANORAMA.LOADING}</div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(win);
+            win.querySelector('#strava-panorama-close').onclick = onClose;
+
+            ['t', 'l', 'tl'].forEach(side => {
+                const h = document.createElement('div');
+                h.className = `pano-handle handle-${side}`;
+                win.appendChild(h);
+                Resizable.init(win, h, side);
+            });
+
+            Draggable.init(win, win.querySelector('#strava-panorama-drag-handle'));
+            state.window = win;
+
+            // Initial positioning
+            Utils.enforceBounds(win);
+
+            return win;
+        },
+
+        showError(msg) {
+            const loading = state.window.querySelector('#strava-panorama-loading');
+            const viewer = state.window.querySelector('#pano-v');
+            if (viewer) viewer.style.display = 'none';
+
+            loading.style.display = 'flex';
+            loading.innerHTML = `
+                <div style="padding: 24px;">
+                    <div style="font-weight:700; color:#fc4c02; margin-bottom:8px;">${msg.title || STRINGS.PANORAMA.ERROR_TITLE}</div>
+                    <div style="font-size:13px; color:white; font-weight:500;">${msg.text}</div>
+                </div>
+            `;
+            state.window.classList.add('error-state');
+        }
+    };
+
+    /**
+     * Map Marker Logic
+     */
+    const PanoramaMarker = {
+        create(map, lon, lat, yaw = 0) {
+            this.remove();
+            const el = document.createElement('div');
+            el.style.cssText = 'position:absolute; transform:translate(-50%, -50%); z-index:1; pointer-events:none;';
+            const deg = (yaw * 180 / Math.PI);
+            el.innerHTML = `
+                <svg viewBox="0 0 32 32" width="32" height="32" style="overflow:visible;">
+                    <filter id="marker-shadow"><feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-opacity="0.5"/></filter>
+                    <g transform="translate(16, 16)" filter="url(#marker-shadow)">
+                        <g class="rot" style="transform: rotate(${deg}deg); transition: transform 0.1s ease-out;">
+                            <path d="M 0 -15 L 7 -5.6 A 9 9 0 1 1 -7 -5.6 Z" fill="#FC4C02" stroke="white" stroke-width="2.5" stroke-linejoin="round" />
+                        </g>
+                    </g>
+                </svg>
+            `;
+
+            const container = map.getCanvasContainer ? map.getCanvasContainer() : (map.getContainer ? map.getContainer() : document.querySelector('.mapboxgl-map'));
+            if (container) container.appendChild(el);
+
+            state.marker = { el, map, lon, lat, yaw, lastDeg: deg };
+            this.updatePos();
+
+            const handler = () => this.updatePos();
+            map.on('move', handler);
+            map.on('zoom', handler);
+            state.marker.handler = handler;
+        },
+
+        updatePos() {
+            if (!state.marker) return;
+            const pt = state.marker.map.project([state.marker.lon, state.marker.lat]);
+            state.marker.el.style.left = pt.x + 'px';
+            state.marker.el.style.top = pt.y + 'px';
+        },
+
+        updateDir(yaw) {
+            if (!state.marker) return;
+            state.marker.yaw = yaw;
+            let target = (yaw * 180 / Math.PI);
+            const cur = state.marker.lastDeg;
+            let delta = (target - cur) % 360;
+            if (delta > 180) delta -= 360;
+            if (delta < -180) delta += 360;
+            target = cur + delta;
+            state.marker.lastDeg = target;
+            state.marker.el.querySelector('.rot').style.transform = `rotate(${target}deg)`;
+        },
+
+        remove() {
+            if (state.marker) {
+                state.marker.el.remove();
+                state.marker.map.off('move', state.marker.handler);
+                state.marker.map.off('zoom', state.marker.handler);
+                state.marker = null;
+            }
+        }
+    };
+
+    /**
+     * Window Interaction Utilities
+     */
+    const Draggable = {
+        init(el, handle) {
+            let dragging = false, sx, sy, sb, sr;
+            handle.onmousedown = (e) => {
+                dragging = true; sx = e.clientX; sy = e.clientY;
+                const r = el.getBoundingClientRect();
+                sb = window.innerHeight - r.bottom;
+                sr = window.innerWidth - r.right;
+                document.onmousemove = move;
+                document.onmouseup = stop;
+                e.preventDefault();
+            };
+            const move = (e) => {
+                if (!dragging) return;
+                const bOffset = Utils.getBottomOffset();
+                let b = sb - (e.clientY - sy);
+                let r = sr - (e.clientX - sx);
+
+                if (b <= bOffset + 5) { b = bOffset; state.docked.bottom = true; }
+                else state.docked.bottom = false;
+
+                if (r <= 25) { r = 20; state.docked.right = true; }
+                else state.docked.right = false;
+
+                el.style.bottom = b + 'px';
+                el.style.right = r + 'px';
+                Utils.enforceBounds(el);
+            };
+            const stop = () => { dragging = false; document.onmousemove = null; };
+        }
+    };
+
+    const Resizable = {
+        init(el, handle, side) {
+            let resizing = false, sw, sh, sx, sy;
+            handle.onmousedown = (e) => {
+                resizing = true; sx = e.clientX; sy = e.clientY;
+                const r = el.getBoundingClientRect();
+                sw = r.width; sh = r.height;
+                document.onmousemove = move;
+                document.onmouseup = stop;
+                e.preventDefault();
+            };
+            const move = (e) => {
+                if (!resizing) return;
+                if (side.includes('l')) {
+                    const w = sw - (e.clientX - sx);
+                    if (w > 300) { el.style.width = w + 'px'; state.ratios.width = w / window.innerWidth; }
+                }
+                if (side.includes('t')) {
+                    const h = sh - (e.clientY - sy);
+                    if (h > 200) { el.style.height = h + 'px'; state.ratios.height = h / window.innerHeight; }
+                }
+                Utils.enforceBounds(el);
+            };
+            const stop = () => { resizing = false; document.onmousemove = null; };
+        }
+    };
+
+    const Utils = {
+        getBottomOffset() {
+            // Strava's bottom bar (route planning, etc.)
+            const bar = document.querySelector('[class*="BottomBar_bottomBar"]');
+            if (bar && bar.offsetHeight > 0) {
+                // If the bar is visible, we want to stay above it
+                return bar.offsetHeight + 20;
+            }
+            return 20; // Default padding from bottom
+        },
+
+        enforceBounds(el) {
+            if (!el) return;
+            const bOffset = this.getBottomOffset();
+            const w = window.innerWidth, h = window.innerHeight;
+
+            let tw = Math.max(300, Math.min(w * state.ratios.width, w - 40));
+            let th = Math.max(200, Math.min(h * state.ratios.height, h - 145 - bOffset));
+            el.style.width = tw + 'px';
+            el.style.height = th + 'px';
+
+            if (state.docked.bottom) el.style.bottom = bOffset + 'px';
+            if (state.docked.right) el.style.right = '20px';
+        }
+    };
+
+    /**
+     * Main Panorama Controller
+     */
+    const PanoramaManager = {
+        async enable(map) {
+            if (state.active && state.map === map) return;
+            console.log('Strava More Maps: Enabling Panorama Mode');
+            state.active = true;
+            state.map = map;
+            document.body.classList.add('strava-panorama-active');
+            PanoramaUI.injectStyles();
+
+            const canvas = map.getCanvas();
+            if (canvas) {
+                state.domClickBound = (e) => {
+                    if (!state.active) return;
+                    // Intercept and stop the click before it reaches Strava's route builder
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const lngLat = map.unproject([x, y]);
+
+                    console.log('Strava More Maps: Panorama Click Intercepted');
+                    this.open(lngLat.lng, lngLat.lat);
+                };
+                // Register in CAPTURE phase to be first
+                canvas.addEventListener('click', state.domClickBound, true);
+            }
+
+            this.setupLayoutObserver();
+        },
+
+        disable() {
+            if (!state.active) return;
+            console.log('Strava More Maps: Disabling Panorama Mode');
+            state.active = false;
+            document.body.classList.remove('strava-panorama-active');
+
+            const canvas = state.map ? state.map.getCanvas() : null;
+            if (canvas && state.domClickBound) {
+                canvas.removeEventListener('click', state.domClickBound, true);
+                state.domClickBound = null;
+            }
+        },
+
+        handleMapClick(e) {
+            if (!state.active) return;
+            if (e.originalEvent) {
+                e.originalEvent.stopPropagation();
+                e.originalEvent.stopImmediatePropagation();
+            }
+            this.open(e.lngLat.lng, e.lngLat.lat);
+        },
+
+        async open(lon, lat) {
+            if (!state.apiReady) await this.loadAPI();
+
+            const win = PanoramaUI.createWindow(() => this.handleUserClose());
+            const content = win.querySelector('#strava-panorama-content');
+            const loading = win.querySelector('#strava-panorama-loading');
+
+            loading.style.display = 'flex';
+            win.classList.remove('error-state');
+
+            try {
+                if (state.panorama) { state.panorama.destroy(); state.panorama = null; }
+                const viewer = content.querySelector('#pano-v') || document.createElement('div');
+                viewer.id = 'pano-v'; viewer.style.cssText = 'width:100%; height:100%;';
+                content.appendChild(viewer);
+
+                const api = window.Panorama || (window.SMap && window.SMap.Pano);
+                if (!api) throw new Error('Panorama API not found');
+
+                const pano = await api.panoramaFromPosition({
+                    parent: viewer, lon, lat, radius: 100, lang: 'en', yaw: 'auto',
+                    fov: Math.PI / 2, showNavigation: true,
+                    apiKey: localStorage.getItem(STORAGE_KEYS.MAPY_KEY)
+                });
+
+                state.panorama = pano;
+                loading.style.display = 'none';
+
+                if (pano.errorCode && pano.errorCode !== 'NONE') {
+                    PanoramaUI.showError({ title: STRINGS.PANORAMA.NO_PANO_TITLE, text: STRINGS.PANORAMA.NO_PANO_TEXT });
+                    return;
+                }
+
+                const cam = pano.getCamera();
+                PanoramaMarker.create(state.map, pano.info.lon, pano.info.lat, cam.yaw);
+
+                pano.addListener('pano-view', () => PanoramaMarker.updateDir(pano.getCamera().yaw));
+                pano.addListener('pano-place', (p) => p.info && PanoramaMarker.create(state.map, p.info.lon, p.info.lat, pano.getCamera().yaw));
+
+            } catch (e) {
+                PanoramaUI.showError({ title: STRINGS.PANORAMA.ERROR_TITLE, text: e.message });
+            }
+        },
+
+        // Explicitly called when user clicks 'X'
+        handleUserClose() {
+            this.disable();
+            this.closeWindow();
+            window.postMessage({ type: 'STRAVA_PANORAMA_TOGGLE', active: false }, '*');
+        },
+
+        // Internal cleanup
+        closeWindow() {
+            if (state.window) { state.window.remove(); state.window = null; }
+            if (state.panorama) { state.panorama.destroy(); state.panorama = null; }
+            PanoramaMarker.remove();
+        },
+
+        close() { this.closeWindow(); }, // For backward compatibility if needed
+
+        loadAPI() {
+            if (window.Panorama || (window.SMap && window.SMap.Pano)) {
+                state.apiReady = true;
+                return Promise.resolve();
+            }
+
+            return new Promise((resolve, reject) => {
+                const key = localStorage.getItem(STORAGE_KEYS.MAPY_KEY);
+                console.log('Strava More Maps: Loading Panorama API...');
+                const s = document.createElement('script');
+                s.src = `https://api.mapy.cz/js/panorama/v1/panorama.js${key ? `?apikey=${key}` : ''}`;
+                s.onload = () => {
+                    const check = (a = 0) => {
+                        if (window.Panorama || (window.SMap && window.SMap.Pano)) {
+                            state.apiReady = true;
+                            console.log('Strava More Maps: Panorama API Ready');
+                            resolve();
+                        }
+                        else if (a < 50) setTimeout(() => check(a + 1), 100);
+                        else reject('API Timeout');
+                    };
+                    check();
+                };
+                s.onerror = (e) => {
+                    console.error('Strava More Maps: Failed to load Panorama JS', e);
+                    reject(e);
+                };
+                document.head.appendChild(s);
+            });
+        },
+
+        setupLayoutObserver() {
+            const startObserver = () => {
+                const bar = document.querySelector('[class*="BottomBar_bottomBar"]');
+                if (bar) {
+                    new ResizeObserver(() => {
+                        if (state.active && state.window) {
+                            Utils.enforceBounds(state.window);
+                        }
+                    }).observe(bar);
+                    return true;
+                }
+                return false;
+            };
+
+            if (!startObserver()) {
+                // If bar doesn't exist yet (late injection), poll for it
+                let attempts = 0;
+                const i = setInterval(() => {
+                    if (startObserver() || ++attempts > 10) clearInterval(i);
+                }, 1000);
+            }
+        }
+    };
+
+    window.StravaMoreMapsPanorama = {
+        enable: PanoramaManager.enable.bind(PanoramaManager),
+        disable: PanoramaManager.disable.bind(PanoramaManager),
+        isActive: () => state.active
+    };
+})();
