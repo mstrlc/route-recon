@@ -589,7 +589,7 @@
             const result = await new Promise((resolve, reject) => {
                 sv.getPanorama({ location, radius: 100 }, (data, status) => {
                     if (status === "OK") resolve(data);
-                    else reject(new Error('No Google Street View found here.'));
+                    else reject(new Error(STRINGS.PANORAMA.NO_GOOGLE_PANO_TEXT));
                 });
             });
 

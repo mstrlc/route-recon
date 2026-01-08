@@ -23,6 +23,7 @@ if (typeof RouteReconConfig !== 'undefined') {
             LOADING: 'Loading Panorama...',
             NO_PANO_TITLE: 'No Panorama available',
             NO_PANO_TEXT: "Couldn't find a Panorama image at this location.<br>Try clicking closer to a road.",
+            NO_GOOGLE_PANO_TEXT: "Couldn't find Google Street View at this location.<br>Try clicking closer to a road.",
             ERROR_TITLE: 'Error',
             CLOSE_TOOLTIP: 'Close Panorama'
         },
