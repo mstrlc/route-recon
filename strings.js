@@ -12,6 +12,8 @@ if (typeof RouteReconConfig !== 'undefined') {
             SETTINGS_TITLE: 'Route Recon Settings',
             API_KEYS_NOTICE: "API keys are stored exclusively in your browser's local storage and never leave your machine.",
             SAVE_BUTTON: 'Save Settings',
+            RESET_BUTTON: 'Delete All Extension Data',
+            DELETE_DATA_CONFIRM: 'Are you sure you want to delete all extension data? This will remove all API keys and reset all settings. This action cannot be undone.',
             STYLING_HEADER: 'Map Styling',
             STYLING_EXPLAINER: 'Only applies to custom layers.',
             OPACITY_LABEL: 'Opacity',

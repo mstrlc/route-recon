@@ -62,20 +62,11 @@ window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data) return;
 
     if (event.data.type === 'ROUTERECON_PANORAMA_TOGGLE') {
-        const active = event.data.active;
         if (active !== isPanoramaActive) {
-            // Check for API key if activating panorama
-            if (active) {
-                const apiKey = localStorage.getItem(STORAGE_KEYS.MAPY_KEY);
-                if (!apiKey) {
-                    showSettingsModal(true); // Show with instructions
-                    return; // Don't activate panorama yet
-                }
-            }
             updatePanoramaUI(active);
         }
     } else if (event.data.type === 'ROUTERECON_OPEN_SETTINGS') {
-        showSettingsModal();
+        showSettingsModal(event.data.instructions || false, event.data.highlightKey || null);
     } else if (event.data.type === 'ROUTERECON_API_KEY_UPDATED') {
         // Sync the provider selector if it exists
         const selector = document.getElementById('routerecon-panorama-provider-selector');
@@ -527,6 +518,17 @@ function createPanoramaButton() {
 
     btn.addEventListener('click', () => {
         const newState = !isPanoramaActive;
+
+        // If enabling, check for key
+        if (newState) {
+            const provider = localStorage.getItem(STORAGE_KEYS.PANO_PROVIDER) || 'mapy';
+            const key = provider === 'mapy' ? localStorage.getItem(STORAGE_KEYS.MAPY_KEY) : localStorage.getItem(STORAGE_KEYS.GOOGLE_KEY);
+            if (!key) {
+                showSettingsModal(true, provider === 'mapy' ? STORAGE_KEYS.MAPY_KEY : STORAGE_KEYS.GOOGLE_KEY);
+                return;
+            }
+        }
+
         updatePanoramaUI(newState);
         window.postMessage({ type: 'ROUTERECON_PANORAMA_TOGGLE', active: newState }, '*');
     });
@@ -542,7 +544,7 @@ function createPanoramaButton() {
 let settingsModalInjected = false;
 let settingsButtonInjected = false;
 
-function showSettingsModal(showInstructions = false) {
+function showSettingsModal(showInstructions = false, highlightKey = null) {
     injectSettingsModal();
     const modal = document.getElementById('routerecon-settings-modal');
     if (modal) {
@@ -550,6 +552,14 @@ function showSettingsModal(showInstructions = false) {
         if (showInstructions) {
             const instr = document.getElementById('routerecon-api-instructions');
             if (instr) instr.style.display = 'block';
+        }
+        if (highlightKey) {
+            const input = document.getElementById(`input-${highlightKey}`);
+            if (input) {
+                input.style.border = '2px solid #fc4c02';
+                input.style.backgroundColor = '#fff5f2';
+                input.focus();
+            }
         }
     }
 }
@@ -625,30 +635,45 @@ function injectSettingsModal() {
     labelMapy.style.cssText = 'display:block; margin-bottom:8px; font-weight:600; text-align:left;';
 
     const inputMapy = document.createElement('input');
+    inputMapy.id = `input-${STORAGE_KEYS.MAPY_KEY}`;
     inputMapy.type = 'text';
     inputMapy.placeholder = STRINGS.SETTINGS.MAPY_PLACEHOLDER;
     inputMapy.value = localStorage.getItem(STORAGE_KEYS.MAPY_KEY) || '';
-    inputMapy.style.cssText = 'width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; margin-bottom:16px; font-size:12px; font-family:monospace;';
+    inputMapy.style.cssText = 'width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; margin-bottom:16px; font-size:12px; font-family:monospace; transition: border 0.2s, background-color 0.2s;';
+    inputMapy.oninput = () => {
+        inputMapy.style.border = '1px solid #ddd';
+        inputMapy.style.backgroundColor = 'white';
+    };
 
     const labelGoogle = document.createElement('label');
     labelGoogle.textContent = STRINGS.SETTINGS.GOOGLE_LABEL;
     labelGoogle.style.cssText = 'display:block; margin-bottom:8px; font-weight:600; text-align:left;';
 
     const inputGoogle = document.createElement('input');
+    inputGoogle.id = `input-${STORAGE_KEYS.GOOGLE_KEY}`;
     inputGoogle.type = 'text';
     inputGoogle.placeholder = STRINGS.SETTINGS.GOOGLE_PLACEHOLDER;
     inputGoogle.value = localStorage.getItem(STORAGE_KEYS.GOOGLE_KEY) || '';
-    inputGoogle.style.cssText = 'width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; margin-bottom:16px; font-size:12px; font-family:monospace;';
+    inputGoogle.style.cssText = 'width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; margin-bottom:16px; font-size:12px; font-family:monospace; transition: border 0.2s, background-color 0.2s;';
+    inputGoogle.oninput = () => {
+        inputGoogle.style.border = '1px solid #ddd';
+        inputGoogle.style.backgroundColor = 'white';
+    };
 
     const labelTF = document.createElement('label');
     labelTF.textContent = STRINGS.SETTINGS.TF_LABEL;
     labelTF.style.cssText = 'display:block; margin-bottom:8px; font-weight:600; text-align:left;';
 
     const inputTF = document.createElement('input');
+    inputTF.id = `input-${STORAGE_KEYS.TF_KEY}`;
     inputTF.type = 'text';
     inputTF.placeholder = STRINGS.SETTINGS.TF_PLACEHOLDER;
     inputTF.value = localStorage.getItem(STORAGE_KEYS.TF_KEY) || '';
-    inputTF.style.cssText = 'width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; margin-bottom:16px; font-size:12px; font-family:monospace;';
+    inputTF.style.cssText = 'width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; margin-bottom:16px; font-size:12px; font-family:monospace; transition: border 0.2s, background-color 0.2s;';
+    inputTF.oninput = () => {
+        inputTF.style.border = '1px solid #ddd';
+        inputTF.style.backgroundColor = 'white';
+    };
 
     const labelProvider = document.createElement('label');
     labelProvider.textContent = STRINGS.SETTINGS.PROVIDER_LABEL;
@@ -713,15 +738,72 @@ function injectSettingsModal() {
     storageInfo.textContent = STRINGS.UI.API_KEYS_NOTICE;
 
     const saveBtn = document.createElement('button');
-    saveBtn.textContent = STRINGS.UI.SAVE_BUTTON;
-    saveBtn.style.cssText = 'width:100%; padding:12px; background:#fc4c02; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer; font-size:16px; transition:background 0.2s;';
+    saveBtn.style.cssText = 'width:100%; padding:12px; background:#fc4c02; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer; font-size:16px; transition:background 0.2s; display:flex; align-items:center; justify-content:center; gap:8px;';
+
+    const saveIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    saveIcon.setAttribute('viewBox', '0 0 24 24');
+    saveIcon.setAttribute('width', '18');
+    saveIcon.setAttribute('height', '18');
+    saveIcon.setAttribute('fill', 'none');
+    saveIcon.setAttribute('stroke', 'currentColor');
+    saveIcon.setAttribute('stroke-width', '2.5');
+    saveIcon.setAttribute('stroke-linecap', 'round');
+    saveIcon.setAttribute('stroke-linejoin', 'round');
+    saveIcon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+
+    const saveText = document.createElement('span');
+    saveText.textContent = STRINGS.UI.SAVE_BUTTON;
+
+    saveBtn.appendChild(saveIcon);
+    saveBtn.appendChild(saveText);
     saveBtn.onclick = () => {
         localStorage.setItem(STORAGE_KEYS.MAPY_KEY, inputMapy.value.trim());
         localStorage.setItem(STORAGE_KEYS.GOOGLE_KEY, inputGoogle.value.trim());
         localStorage.setItem(STORAGE_KEYS.TF_KEY, inputTF.value.trim());
         localStorage.setItem(STORAGE_KEYS.PANO_PROVIDER, selectProvider.value);
+
+        // Clear any highlights
+        [inputMapy, inputGoogle, inputTF].forEach(inp => {
+            inp.style.border = '1px solid #ddd';
+            inp.style.backgroundColor = 'white';
+        });
+
         modal.style.display = 'none';
         window.postMessage({ type: 'ROUTERECON_API_KEY_UPDATED' }, '*');
+    };
+
+    const resetBtn = document.createElement('button');
+    resetBtn.style.cssText = 'width:100%; padding:8px; background:transparent; color:#999; border:none; border-radius:6px; font-weight:500; cursor:pointer; font-size:12px; margin-top:12px; text-decoration:underline; display:flex; align-items:center; justify-content:center; gap:6px;';
+
+    const resetIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    resetIcon.setAttribute('viewBox', '0 0 24 24');
+    resetIcon.setAttribute('width', '14');
+    resetIcon.setAttribute('height', '14');
+    resetIcon.setAttribute('fill', 'none');
+    resetIcon.setAttribute('stroke', 'currentColor');
+    resetIcon.setAttribute('stroke-width', '2');
+    resetIcon.setAttribute('stroke-linecap', 'round');
+    resetIcon.setAttribute('stroke-linejoin', 'round');
+    resetIcon.innerHTML = '<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line>';
+
+    const resetText = document.createElement('span');
+    resetText.textContent = STRINGS.UI.RESET_BUTTON;
+
+    resetBtn.appendChild(resetIcon);
+    resetBtn.appendChild(resetText);
+    resetBtn.onclick = () => {
+        if (confirm(STRINGS.UI.DELETE_DATA_CONFIRM)) {
+            // Find all keys starting with routerecon_ and remove them
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('routerecon_')) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            window.location.reload();
+        }
     };
 
     content.appendChild(closeBtn);
@@ -737,6 +819,7 @@ function injectSettingsModal() {
     content.appendChild(inputTF);
     content.appendChild(storageInfo);
     content.appendChild(saveBtn);
+    content.appendChild(resetBtn);
     modal.appendChild(content);
     document.body.appendChild(modal);
 

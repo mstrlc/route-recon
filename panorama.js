@@ -452,8 +452,20 @@
         },
 
         async open(lon, lat) {
-            state.lastPos = { lon, lat };
             const provider = state.provider;
+            const key = provider === 'mapy' ? localStorage.getItem(STORAGE_KEYS.MAPY_KEY) : localStorage.getItem(STORAGE_KEYS.GOOGLE_KEY);
+
+            if (!key) {
+                window.postMessage({
+                    type: 'ROUTERECON_OPEN_SETTINGS',
+                    instructions: true,
+                    highlightKey: provider === 'mapy' ? STORAGE_KEYS.MAPY_KEY : STORAGE_KEYS.GOOGLE_KEY
+                }, '*');
+                this.handleUserClose();
+                return;
+            }
+
+            state.lastPos = { lon, lat };
 
             if (provider === 'google' && !state.googleApiReady) await this.loadGoogleAPI();
             if (provider === 'mapy' && !state.apiReady) await this.loadAPI();
